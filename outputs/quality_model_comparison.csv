@@ -1,0 +1,9 @@
+﻿model,best_params,cv_mean_f1,test_accuracy,test_f1_macro,test_precision,test_recall
+GradientBoosting,"{'clf__learning_rate': 0.2, 'clf__max_depth': 3, 'clf__n_estimators': 200, 'scaler': StandardScaler()}",0.8621,0.8679,0.8168,0.8802,0.7868
+BaggingTree,"{'clf__max_features': 0.8, 'clf__max_samples': 0.8, 'clf__n_estimators': 200, 'scaler': StandardScaler()}",0.8611,0.8679,0.8057,0.9222,0.7667
+SVC,"{'clf__C': 100, 'clf__degree': 2, 'clf__gamma': 'scale', 'clf__kernel': 'poly', 'scaler': MinMaxScaler()}",0.8576,0.8302,0.7948,0.7897,0.8009
+KNN,"{'clf__metric': 'manhattan', 'clf__n_neighbors': 3, 'clf__weights': 'uniform', 'scaler': StandardScaler()}",0.8205,0.8302,0.7864,0.793,0.7807
+RandomForest,"{'clf__max_depth': None, 'clf__min_samples_split': 5, 'clf__n_estimators': 100, 'scaler': StandardScaler()}",0.8739,0.8491,0.7706,0.913,0.7333
+MLP,"{'clf__alpha': 0.001, 'clf__hidden_layer_sizes': (100,), 'clf__learning_rate_init': 0.001, 'scaler': MinMaxScaler()}",0.8593,0.7547,0.7037,0.7002,0.7079
+RidgeClassifier,"{'clf__alpha': 0.1, 'scaler': MinMaxScaler()}",0.7667,0.7736,0.6768,0.7311,0.6605
+LogisticRegression,"{'clf__C': 10, 'scaler': StandardScaler()}",0.7775,0.7358,0.5985,0.6661,0.5939
