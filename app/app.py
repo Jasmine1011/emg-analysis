@@ -211,6 +211,9 @@ def _analyze_one_file(fname, p, r, progress_bar, step_idx, total_files):
         quality_result = predict_quality(filtered, fs_val, events["cycles"],
                                          action_label=action_result.get("overall_action", ""))
         r["quality_result"] = quality_result
+
+        progress_bar.progress((step_idx + 1) / total_files,
+                              text=f"✅ {fname} ({events['count']} 周期, {action_result.get('overall_action','?')})")
     except Exception as e:
         r["curves"] = {}
         r["features_df"] = None
@@ -218,9 +221,8 @@ def _analyze_one_file(fname, p, r, progress_bar, step_idx, total_files):
                                "vote_counts": {}}
         r["quality_result"] = {"standard_count": 0, "nonstandard_count": 0,
                                 "overall_summary": f"错误: {e}", "cycle_results": []}
-
-    progress_bar.progress((step_idx + 1) / total_files,
-                          text=f"✅ {fname} ({events['count']} 周期, {action_result.get('overall_action','?')})")
+        progress_bar.progress((step_idx + 1) / total_files,
+                              text=f"❌ {fname} (失败: {str(e)[:40]})")
 
 
 def run_analysis():
