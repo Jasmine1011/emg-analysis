@@ -97,7 +97,7 @@ with st.sidebar:
         st.session_state.current_file = None
         st.rerun()
 
-    # 分析完成后显示文件选择器
+    # 分析完成后显示文件选择器 + 导出按钮
     if st.session_state.analysis_done and st.session_state.results:
         analyzed = [fn for fn, r in st.session_state.results.items()
                     if r.get("filtered") is not None]
@@ -110,6 +110,21 @@ with st.sidebar:
             if selected != st.session_state.get("current_file"):
                 st.session_state.current_file = selected
                 st.rerun()
+
+        # 导出预测 CSV
+        st.markdown("---")
+        ACTION_TO_LABEL = {"前平举": 1, "侧平举": 2, "推肩": 3}
+        rows = []
+        for fn in analyzed:
+            fid = fn.replace(".mat", "")
+            r = st.session_state.results[fn]
+            act = r.get("action_result", {}).get("overall_action", "")
+            label = ACTION_TO_LABEL.get(act, "")
+            rows.append(f"{fid},{label}")
+        csv_content = "ID,Pred_Label\n" + "\n".join(rows)
+        st.download_button("📥 导出预测 CSV", data=csv_content,
+                           file_name="Pred_Labels_Group03_Submit1.csv",
+                           mime="text/csv", use_container_width=True)
 
 # ------------------------------------------------------------
 # 主界面标题
