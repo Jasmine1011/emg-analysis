@@ -38,7 +38,7 @@ with st.sidebar:
     uploaded = st.file_uploader("选择 .mat 文件", type=["mat"], label_visibility="collapsed")
 
     if uploaded:
-        # 只在首次上传或切换文件时加载
+        # 新文件 → 自动加载
         if st.session_state.result is None or st.session_state.result.fname != uploaded.name:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mat") as tmp:
                 tmp.write(uploaded.read()); tmp_path = tmp.name
@@ -46,6 +46,7 @@ with st.sidebar:
             os.unlink(tmp_path)
             st.session_state.result = FileResult(fname=uploaded.name, raw=raw, fs=fs)
             st.session_state.analysis_done = False
+            st.session_state._params = {}  # 触发自动分析
 
         r = st.session_state.result
         st.success(f"**{r.fname}**")
@@ -66,12 +67,16 @@ with st.sidebar:
                                          help="越大越不敏感")
 
     st.markdown("---")
-    if st.button("🚀 开始分析", use_container_width=True, type="primary",
-                 disabled=(uploaded is None)):
-        st.session_state._params = p
-        st.session_state.analysis_done = False
-        st.session_state.result.filtered = None  # 清空旧结果
-        st.rerun()
+    # 首次上传 → 自动分析；调整参数后 → 手动重新分析
+    if st.session_state.analysis_done:
+        if st.button("🔄 重新分析", use_container_width=True, type="primary"):
+            st.session_state._params = p
+            st.session_state.analysis_done = False
+            st.session_state.result.filtered = None
+            st.rerun()
+    elif not uploaded:
+        pass  # 无文件，不显示按钮
+    # else: 首次上传自动触发，不需要按钮
 
 # ================================================================
 # 分析管线
@@ -132,7 +137,7 @@ def analyze(r, p):
 
 
 if (st.session_state.result is not None and not st.session_state.analysis_done
-        and "_params" in st.session_state):
+        and st.session_state.get("_params") is not None):
     r = st.session_state.result
     with st.spinner("分析中..."):
         analyze(r, st.session_state._params)
@@ -151,10 +156,10 @@ r = st.session_state.result
 if r is None:
     st.title("💪 双通道表面肌电信号处理与分析")
     st.caption("CH1: 三角肌前束 | CH2: 三角肌中束 | 前平举·侧平举·推肩 | ⚠️ 质量判断为辅助参考")
-    st.info("👈 请上传 .mat 文件并点击「开始分析」")
+    st.info("👈 请上传 .mat 文件，将自动开始分析")
 elif not st.session_state.analysis_done:
     st.title(f"💪 {r.fname}")
-    st.info("👈 请点击「开始分析」按钮")
+    st.info("分析中...")
 else:
     st.title(f"💪 {r.fname}")
     fs_val = r.fs
