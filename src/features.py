@@ -528,3 +528,108 @@ DEFAULT_SELECTED_FEATURES = [
     'mf_ch1', 'mf_ch2', 'mdf_ch1', 'mdf_ch2',
     'ratio_rms', 'corr_coef',
 ]
+
+
+# ================================================================
+# 特征方案: 绝对幅值敏感 vs 比值/频域型
+# ================================================================
+
+# 依赖绝对幅值的特征 (受试者间差异大)
+ABSOLUTE_FEATURES = {
+    'rms', 'mav', 'var', 'wl', 'iemg',  # 时域幅值特征
+}
+
+# 不依赖绝对幅值的特征 (比值 + 频域 + 符号变化)
+RATIO_FEATURES = {
+    # 通道级比值
+    'zc', 'ssc',                   # 符号变化率 (对幅值不敏感)
+    'mf', 'mdf', 'pf',             # 频域 (与幅值无关)
+    # 跨通道协同
+    'ratio_rms', 'diff_rms', 'rms_ratio_ch1', 'rms_ratio_ch2',
+    'corr_coef', 'peak_time_ch1', 'peak_time_ch2', 'activation_time_diff',
+}
+
+
+def get_ratio_feature_names(feature_columns):
+    """
+    从特征列名列表中筛选仅比值/频域型特征.
+
+    用法:
+        df = extract_all_cycles(...)
+        ratio_cols = get_ratio_feature_names(df.columns)
+
+    Parameters
+    ----------
+    feature_columns : list of str
+        全部特征列名.
+
+    Returns
+    -------
+    ratio_cols : list of str
+        仅比值/频域/协同特征列名.
+    """
+    ratio_cols = []
+    for col in feature_columns:
+        # 检查是否是敏感特征名
+        parts = col.rsplit('_', 1)
+        base = parts[0] if len(parts) > 1 else col
+        is_ch_suffix = col.endswith('_ch1') or col.endswith('_ch2')
+        if is_ch_suffix and base in ABSOLUTE_FEATURES:
+            continue
+        if col in ABSOLUTE_FEATURES:
+            continue
+        ratio_cols.append(col)
+    return ratio_cols
+
+
+def normalize_features_per_file(features_df, file_col='filename'):
+    """
+    对每个文件的特征做独立 z-score 归一化.
+
+    目的: 消除不同受试者/文件的绝对幅值差异，保留文件内的相对变化模式。
+
+    用法:
+        df = extract_all_cycles(...)
+        df_normalized = normalize_features_per_file(df, file_col='filename')
+
+    Parameters
+    ----------
+    features_df : pd.DataFrame
+        含特征和文件名列的 DataFrame.
+    file_col : str
+        文件名列名.
+
+    Returns
+    -------
+    df_norm : pd.DataFrame
+        归一化后的 DataFrame (非特征列保持不变).
+    """
+    df_norm = features_df.copy()
+    # 识别特征列 (排除元数据/标签列)
+    meta_label_cols = {'filename', 'cycle_id', 'start_idx', 'end_idx',
+                       'start_time', 'end_time', 'duration',
+                       'action_label', 'quality_label', 'abnormal_type',
+                       'label_source'}
+    feature_cols = [c for c in df_norm.columns if c not in meta_label_cols]
+
+    for fname in df_norm[file_col].unique():
+        mask = df_norm[file_col] == fname
+        for col in feature_cols:
+            vals = df_norm.loc[mask, col].values.astype(np.float64)
+            mean = np.nanmean(vals)
+            std = np.nanstd(vals)
+            if std > 1e-12:
+                df_norm.loc[mask, col] = (vals - mean) / std
+            else:
+                df_norm.loc[mask, col] = 0.0
+
+    return df_norm
+
+
+# 特征方案名称 (供训练脚本使用)
+FEATURE_SCHEMES = {
+    'raw':       '原始特征 (28维)',
+    'normalized': '文件内归一化 (28维)',
+    'ratio':     '仅比值型特征 (去幅值)',
+}
+

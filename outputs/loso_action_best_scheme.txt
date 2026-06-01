@@ -1,0 +1,28 @@
+Optimal scheme: raw (原始特征 (28维))
+Top models: ['MLP', 'KNN']
+LOSO Macro F1: 0.7469 ± 0.2544
+
+Top-5 screening results:
+scheme model    cv_f1  test_f1
+   raw   MLP 0.885757   0.6876
+   raw   KNN 0.906916   0.6811
+   raw    RF 0.878032   0.6571
+   raw   GBM 0.846304   0.6248
+ ratio    LR 0.782314   0.6204
+
+LOSO per-subject:
+test_subject model  macro_f1  train  test
+          01   KNN    0.5686    260    32
+          02   KNN    0.9296    267    25
+          03   KNN    0.9041    262    30
+          04   KNN    0.1159    272    20
+          05   KNN    0.9327    263    29
+          06   KNN    0.5556    263    29
+          07   KNN    0.6508    271    21
+          08   KNN    0.4762    281    11
+          09   KNN    1.0000    275    17
+          10   KNN    0.8258    262    30
+          11   KNN    0.7753    281    11
+          12   MLP    0.7220    262    30
+          13   KNN    1.0000    289     3
+          15   KNN    1.0000    289     3
