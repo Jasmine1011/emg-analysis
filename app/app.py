@@ -127,13 +127,32 @@ st.caption(
 def analyze_one_file(fname, p, progress_bar, step_idx, total_files):
     """分析单个文件，结果写回 session_state.results[fname]"""
     r = st.session_state.results[fname]
+    try:
+        _analyze_one_file(fname, p, r, progress_bar, step_idx, total_files)
+    except Exception as exc:
+        r["error"] = str(exc)
+        r["filtered"] = np.zeros((100, 2))
+        r["events"] = {"count": 0, "cycles": [], "active_segments": [],
+                       "rest_segments": [], "envelope": np.zeros(100),
+                       "envelope_ch1": np.zeros(100), "envelope_ch2": np.zeros(100),
+                       "segment_data": (np.zeros((100,3)), 2000),
+                       "baseline": 0, "threshold": 0}
+        r["curves"] = {}
+        r["features_df"] = None
+        r["action_result"] = {"overall_action": f"错误: {exc}", "cycle_results": [],
+                               "vote_counts": {}}
+        r["quality_result"] = {"standard_count": 0, "nonstandard_count": 0,
+                                "overall_summary": f"错误: {exc}", "cycle_results": []}
+        progress_bar.progress((step_idx + 1) / total_files,
+                              text=f"❌ {fname} (失败)")
+
+
+def _analyze_one_file(fname, p, r, progress_bar, step_idx, total_files):
     raw = r["raw"]
     fs_val = r["fs"]
 
     # Step 1: 预处理
     filtered, _ = preprocess(raw, fs_val,
-        apply_dc_removal=True, apply_amplitude_scaling=True, apply_notch=True,
-        notch_freq=p["notch_freq"], fc_high=p["fc_high"], fc_low=p["fc_low"])
     r["filtered"] = filtered
 
     # Step 2: 事件检测
@@ -210,9 +229,12 @@ def run_analysis():
         summary_parts = []
         for fn in files_to_analyze:
             r = st.session_state.results[fn]
-            n = r["events"]["count"]
-            a = r["action_result"].get("overall_action", "?")
-            summary_parts.append(f"**{fn}**: {n}周期, {a}")
+            if r.get("error"):
+                summary_parts.append(f"**{fn}**: ❌ {r['error'][:30]}")
+            else:
+                n = r["events"]["count"]
+                a = r["action_result"].get("overall_action", "?")
+                summary_parts.append(f"**{fn}**: {n}周期, {a}")
         status_container.success("🎉 分析完成 | " + " | ".join(summary_parts))
 
     except Exception as exc:
@@ -261,6 +283,9 @@ else:
     d = get_current_data()
     if d is None:
         st.info("👈 请在侧边栏选择一个已分析的文件")
+    elif d["events"]["count"] == 0:
+        err = st.session_state.results.get(st.session_state.current_file, {}).get("error", "未知错误")
+        st.error(f"❌ 文件分析失败: {err}")
     else:
         tab1, tab2, tab3, tab4, tab5 = st.tabs(
             ["📊 原始信号", "🔧 预处理结果", "🎯 活动检测",
