@@ -102,6 +102,9 @@ with st.sidebar:
         min_dur = st.slider("最小周期 (s)", 0.5, 3.0, 1.5, 0.1)
         max_dur = st.slider("最大周期 (s)", 4.0, 15.0, 8.0, 0.5)
         target_k = st.slider("预期周期数", 2, 8, 5)
+        st.caption("活动/静息检测")
+        activity_sigma = st.slider("静息阈值倍数", 1.0, 8.0, 3.0, 0.5,
+                                   help="越大越不敏感。基线 + 阈值倍数×噪声标准差 = 活动阈值")
 
     # ---- 一键分析按钮 ----
     st.markdown("---")
@@ -112,7 +115,7 @@ with st.sidebar:
         st.session_state._params = dict(
             notch_freq=notch_freq, fc_high=fc_high, fc_low=fc_low,
             smooth_win=smooth_win, min_dur=min_dur, max_dur=max_dur,
-            target_k=target_k,
+            target_k=target_k, activity_sigma=activity_sigma,
         )
         st.session_state.analysis_done = False  # 触发重跑
         st.rerun()
@@ -165,6 +168,7 @@ def run_analysis():
             min_duration=p["min_dur"],
             max_duration=p["max_dur"],
             target_k=p["target_k"],
+            activity_sigma=p["activity_sigma"],
         )
         st.session_state.events = events
 
