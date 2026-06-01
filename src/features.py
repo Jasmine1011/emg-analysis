@@ -233,6 +233,99 @@ def extract_cycle_features(ch1_segment, ch2_segment, fs):
     # 18. 激活时间差 (CH2 峰值 - CH1 峰值, ms)
     feat['activation_time_diff'] = ((peak_idx2 - peak_idx1) / fs) * 1000.0
 
+    # ---- 扩展协同特征: 全面捕获通道主导模式 ----
+    # 19-27. 各类特征比值 (CH2/CH1)
+    for k in ['wl', 'iemg', 'mav', 'var', 'mdf', 'mf', 'pf', 'zc', 'ssc']:
+        v1 = feat.get(f'{k}_ch1', 0)
+        v2 = feat.get(f'{k}_ch2', 0)
+        feat[f'{k}_ratio'] = v2 / v1 if abs(v1) > 1e-12 else np.nan
+
+    # 28. RMS 对数比值 (对乘法差异更敏感)
+    feat['rms_log_ratio'] = float(np.log(rms2 / rms1)) if rms1 > 1e-12 and rms2 > 1e-12 else np.nan
+
+    # 29. 共激活指数 (0=完全单侧, 1=完全同步)
+    feat['coactivation_idx'] = (2 * min(rms1, rms2) / total_rms) if total_rms > 1e-12 else np.nan
+
+    # 30. CH1 领先时间 (CH1峰-CH2峰, ms, 正=CH1先激活→前平举)
+    feat['ch1_lead_ms'] = ((peak_idx1 - peak_idx2) / fs) * 1000.0
+
+    # ======== 主题1: 肌肉主导 (归一化不对称度) ========
+    def _dom(a1, a2):
+        return (a2 - a1) / (a1 + a2) if (a1 + a2) > 1e-12 else 0.0
+
+    for k in ['rms', 'mav', 'wl', 'iemg', 'zc', 'ssc']:
+        v1 = feat.get(f'{k}_ch1', 0)
+        v2 = feat.get(f'{k}_ch2', 0)
+        feat[f'{k}_dom'] = _dom(v1, v2)
+
+    peak1 = float(np.max(np.abs(ch1_segment)))
+    peak2 = float(np.max(np.abs(ch2_segment)))
+    feat['peak_ratio'] = peak2 / peak1 if peak1 > 1e-12 else np.nan
+
+    # ======== 主题2: 时序关系 ========
+    n_samp = len(ch1_segment)
+    if n_samp >= 4:
+        p1_i = int(np.argmax(np.abs(ch1_segment)))
+        p2_i = int(np.argmax(np.abs(ch2_segment)))
+        pk1 = float(np.abs(ch1_segment[p1_i]))
+        pk2 = float(np.abs(ch2_segment[p2_i]))
+
+        # 上升时间 (5%→95%峰值, ms)
+        def _rise(sig, pk_idx, pk_val):
+            lo, hi = 0, pk_idx
+            for j in range(pk_idx, -1, -1):
+                if abs(sig[j]) < 0.05*pk_val: lo=j; break
+            return ((pk_idx-lo)/fs)*1000.0
+
+        # 下降时间 (95%→5%峰值, ms)
+        def _fall(sig, pk_idx, pk_val):
+            lo, hi = pk_idx, len(sig)-1
+            for j in range(pk_idx, len(sig)):
+                if abs(sig[j]) < 0.05*pk_val: lo=j; break
+            return ((lo-pk_idx)/fs)*1000.0
+
+        rt1, rt2 = _rise(ch1_segment,p1_i,pk1), _rise(ch2_segment,p2_i,pk2)
+        ft1, ft2 = _fall(ch1_segment,p1_i,pk1), _fall(ch2_segment,p2_i,pk2)
+
+        feat['ch1_rise_ms']=rt1; feat['ch2_rise_ms']=rt2
+        feat['ch1_fall_ms']=ft1; feat['ch2_fall_ms']=ft2
+        feat['rise_ratio']=rt2/rt1 if rt1>1e-12 else np.nan
+        feat['fall_ratio']=ft2/ft1 if ft1>1e-12 else np.nan
+
+        # 起始延迟 (哪个通道先跨50%峰值, ms, 正=CH1先)
+        def _onset(sig, pkv):
+            for j in range(len(sig)):
+                if abs(sig[j])>=0.5*pkv: return j
+            return 0
+        feat['onset_lag_ms'] = (_onset(ch1_segment,pk1)-_onset(ch2_segment,pk2))/fs*1000.0
+    else:
+        for k in ['ch1_rise_ms','ch2_rise_ms','ch1_fall_ms','ch2_fall_ms',
+                  'rise_ratio','fall_ratio','onset_lag_ms']:
+            feat[k]=np.nan
+
+    # ======== 主题3: 峰值/形态 ========
+    from scipy.signal import find_peaks as _fpeaks
+    for ch, seg in [('ch1',ch1_segment),('ch2',ch2_segment)]:
+        a=np.abs(seg); mp=np.max(a)
+        if mp>1e-12:
+            pks,_=_fpeaks(a,height=0.5*mp,distance=int(0.05*fs))
+            feat[f'{ch}_n_peaks']=len(pks)
+        else:
+            feat[f'{ch}_n_peaks']=0
+
+    for ch, seg in [('ch1',ch1_segment),('ch2',ch2_segment)]:
+        rv=float(np.sqrt(np.mean(seg**2)))
+        pk=float(np.max(np.abs(seg)))
+        feat[f'{ch}_crest']=pk/rv if rv>1e-12 else np.nan
+
+    for ch, seg in [('ch1',ch1_segment),('ch2',ch2_segment)]:
+        a=np.abs(seg); cs=np.cumsum(a); tot=cs[-1]
+        if tot>1e-12:
+            hi=np.searchsorted(cs,tot/2)
+            feat[f'{ch}_env_skew']=(hi/len(seg))-0.5
+        else:
+            feat[f'{ch}_env_skew']=np.nan
+
     return feat
 
 

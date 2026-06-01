@@ -289,22 +289,28 @@ def _detect_cycles_in_segment(seg_env, offset, fs, threshold,
     top_idx = np.argsort(proms)[::-1][:K]
     selected_peaks = np.sort(peaks[top_idx])
 
-    # ---- 为每个主峰找到最近的上升沿/下降沿 ----
+    # ---- 为每个主峰确定边界: 首尾用阈值交叉, 峰间用谷底 ----
     cycles = []
-    for pk in selected_peaks:
-        # 左边界: 最靠近 pk 且 pk 之前的上升沿
-        left_candidates = rise[rise <= pk]
-        if len(left_candidates) > 0:
-            left = left_candidates[-1]
+    for i, pk in enumerate(selected_peaks):
+        # 左边界
+        if i == 0:
+            # 第一个峰: 用最近的上升沿 (激活起点)
+            left_candidates = rise[rise <= pk]
+            left = left_candidates[-1] if len(left_candidates) > 0 else 0
         else:
-            left = 0
+            # 与前一峰之间的谷底
+            seg_between = seg_env[selected_peaks[i-1]:pk + 1]
+            left = selected_peaks[i-1] + int(np.argmin(seg_between))
 
-        # 右边界: 最靠近 pk 且 pk 之后的下降沿
-        right_candidates = fall[fall >= pk]
-        if len(right_candidates) > 0:
-            right = right_candidates[0]
+        # 右边界
+        if i == len(selected_peaks) - 1:
+            # 最后一个峰: 用最近的下降沿 (放松终点)
+            right_candidates = fall[fall >= pk]
+            right = right_candidates[0] if len(right_candidates) > 0 else (n_seg - 1)
         else:
-            right = n_seg - 1
+            # 与后一峰之间的谷底
+            seg_between = seg_env[pk:selected_peaks[i+1] + 1]
+            right = pk + int(np.argmin(seg_between))
 
         # 转为全局坐标
         s_global = offset + left

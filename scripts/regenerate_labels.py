@@ -44,8 +44,8 @@ from src.event_detection import detect_events
 # ------------------------------------------------------------
 # 全局配置
 # ------------------------------------------------------------
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(SCRIPT_DIR, "data", "data")
+SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 OUTPUT_FILE = os.path.join(SCRIPT_DIR, "data", "labels_v2.csv")
 
 ACTION_MAP = {"qpj": "前平举", "cpj": "侧平举", "tj": "推肩"}

@@ -1,559 +1,317 @@
 # -*- coding: utf-8 -*-
 """
-app.py — 双通道表面肌电信号处理与分析平台 v3.1
+app.py — 双通道表面肌电信号处理与分析平台 v4.1
 
-一键式流程: 上传多个 .mat → 开始分析 → 自动完成全管线 → 结果展示
-支持多文件批量分析，侧边栏切换查看。
+流程: 上传 .mat → 一键分析 → 5 个 Tab 展示结果
+架构: FileResult dataclass + 展平错误处理
 """
 
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-import tempfile
-import os
-import sys
+import tempfile, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.utils import data_loader
 from src.visualization_signal import plot_data, plot_fft_spectrum
 from app.style import CUSTOM_CSS
+from app.models import FileResult
 
 from src.preprocessing import preprocess
 from src.event_detection import detect_events
 from src.features import compute_feature_curves, extract_all_cycles, load_labels, DEFAULT_SELECTED_FEATURES
-from src.visualization import (
-    plot_feature_curves as viz_feature_curves,
-    plot_envelope_with_cycles,
-)
+from src.visualization import plot_feature_curves as viz_fc, plot_envelope_with_cycles
 from src.prediction import predict_action, predict_quality
 
-# ------------------------------------------------------------
-# 页面配置
-# ------------------------------------------------------------
-st.set_page_config(page_title="EMG 信号分析平台", page_icon="💪", layout="wide")
+st.set_page_config(page_title="EMG 分析平台", page_icon="💪", layout="wide")
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-# ------------------------------------------------------------
-# 初始化
-# ------------------------------------------------------------
-for k, v in {"analysis_done": False, "results": {}}.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
+for k, v in {"result": None, "analysis_done": False}.items():
+    if k not in st.session_state: st.session_state[k] = v
 
-# ------------------------------------------------------------
+# ================================================================
 # 侧边栏
-# ------------------------------------------------------------
+# ================================================================
 with st.sidebar:
     st.markdown("### 📁 数据上传")
-    uploaded_files = st.file_uploader("选择 .mat 文件（可多选）", type=["mat"],
-                                       accept_multiple_files=True,
-                                       label_visibility="collapsed")
+    uploaded = st.file_uploader("选择 .mat 文件", type=["mat"], label_visibility="collapsed")
 
-    file_names = []
-    if uploaded_files:
-        for uf in uploaded_files:
-            file_names.append(uf.name)
-            if uf.name not in st.session_state.results:
-                # 新文件：加载原始数据
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mat") as tmp:
-                    tmp.write(uf.read())
-                    tmp_path = tmp.name
-                raw, fs = data_loader(tmp_path)
-                os.unlink(tmp_path)
-                st.session_state.results[uf.name] = {"raw": raw, "fs": fs}
+    if uploaded:
+        # 只在首次上传或切换文件时加载
+        if st.session_state.result is None or st.session_state.result.fname != uploaded.name:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mat") as tmp:
+                tmp.write(uploaded.read()); tmp_path = tmp.name
+            raw, fs = data_loader(tmp_path)
+            os.unlink(tmp_path)
+            st.session_state.result = FileResult(fname=uploaded.name, raw=raw, fs=fs)
+            st.session_state.analysis_done = False
 
-        st.success(f"已加载 {len(uploaded_files)} 个文件")
-        if len(file_names) <= 5:
-            for fn in file_names:
-                r = st.session_state.results[fn]
-                dur = r["raw"].shape[0] / r["fs"]
-                st.caption(f"📄 {fn} ({dur:.0f}s)")
+        r = st.session_state.result
+        st.success(f"**{r.fname}**")
+        st.caption(f"采样率: {r.fs} Hz | 时长: {r.raw.shape[0]/r.fs:.0f}s")
 
     st.markdown("---")
 
     with st.expander("⚙️ 高级设置", expanded=False):
-        notch_freq = st.number_input("工频频率 (Hz)", value=50.0, step=10.0)
-        fc_high = st.number_input("高通截止 (Hz)", value=20.0, step=5.0)
-        fc_low = st.number_input("低通截止 (Hz)", value=450.0, step=10.0)
-        smooth_win = st.slider("平滑窗口 (s)", 0.05, 1.0, 0.300, 0.05)
-        min_dur = st.slider("最小周期 (s)", 0.5, 3.0, 1.5, 0.1)
-        max_dur = st.slider("最大周期 (s)", 4.0, 15.0, 8.0, 0.5)
-        target_k = st.slider("预期周期数", 2, 8, 5)
-        st.caption("活动/静息检测")
-        activity_sigma = st.slider("静息阈值倍数", 0.5, 15.0, 3.0, 0.5,
-                                   help="越大越不敏感")
+        p = {}
+        p["notch_freq"] = st.number_input("工频频率 (Hz)", value=50.0, step=10.0)
+        p["fc_high"] = st.number_input("高通截止 (Hz)", value=20.0, step=5.0)
+        p["fc_low"] = st.number_input("低通截止 (Hz)", value=450.0, step=10.0)
+        p["smooth_win"] = st.slider("平滑窗口 (s)", 0.05, 1.0, 0.300, 0.05)
+        p["min_dur"] = st.slider("最小周期 (s)", 0.5, 3.0, 1.5, 0.1)
+        p["max_dur"] = st.slider("最大周期 (s)", 4.0, 15.0, 8.0, 0.5)
+        p["target_k"] = st.slider("预期周期数", 2, 8, 5)
+        p["activity_sigma"] = st.slider("静息阈值倍数", 0.5, 15.0, 3.0, 0.5,
+                                         help="越大越不敏感")
 
     st.markdown("---")
-    btn_disabled = not uploaded_files
     if st.button("🚀 开始分析", use_container_width=True, type="primary",
-                 disabled=btn_disabled):
-        st.session_state._params = dict(
-            notch_freq=notch_freq, fc_high=fc_high, fc_low=fc_low,
-            smooth_win=smooth_win, min_dur=min_dur, max_dur=max_dur,
-            target_k=target_k, activity_sigma=activity_sigma,
-        )
+                 disabled=(uploaded is None)):
+        st.session_state._params = p
         st.session_state.analysis_done = False
-        st.session_state.current_file = None
+        st.session_state.result.filtered = None  # 清空旧结果
         st.rerun()
 
-    # 分析完成后显示文件选择器 + 导出按钮
-    if st.session_state.analysis_done and st.session_state.results:
-        analyzed = [fn for fn, r in st.session_state.results.items()
-                    if r.get("filtered") is not None]
-        if len(analyzed) >= 1:
-            st.markdown("---")
-            st.markdown("### 📂 切换文件")
-            idx = 0
-            if st.session_state.get("current_file") in analyzed:
-                idx = analyzed.index(st.session_state["current_file"])
-            selected = st.selectbox("选择查看的文件", analyzed, index=idx,
-                                    key="file_selector",
-                                    label_visibility="collapsed")
-            if selected != st.session_state.get("current_file"):
-                st.session_state.current_file = selected
-                st.rerun()
-
-        # 导出预测 CSV
-        if analyzed:
-            st.markdown("---")
-            ACTION_TO_LABEL = {"前平举": 1, "侧平举": 2, "推肩": 3}
-            rows = []
-            for fn in analyzed:
-                fid = fn.replace(".mat", "")
-                r = st.session_state.results[fn]
-                act = r.get("action_result", {}).get("overall_action", "")
-                label = ACTION_TO_LABEL.get(act, "")
-                rows.append(f"{fid},{label}")
-            csv_content = "ID,Pred_Label\n" + "\n".join(rows)
-            st.download_button("📥 导出预测 CSV", data=csv_content,
-                               file_name="Pred_Labels_Group03_Submit1.csv",
-                               mime="text/csv", use_container_width=True)
-
-# ------------------------------------------------------------
-# 主界面标题
-# ------------------------------------------------------------
-st.title("💪 双通道表面肌电信号处理与分析")
-st.caption(
-    "CH1: 三角肌前束 | CH2: 三角肌中束 | "
-    "前平举 · 侧平举 · 推肩 | "
-    "⚠️ 质量判断为辅助参考"
-)
-
-# ------------------------------------------------------------
-# 一键分析
-# ------------------------------------------------------------
-def analyze_one_file(fname, p, progress_bar, step_idx, total_files):
-    """分析单个文件，结果写回 session_state.results[fname]"""
-    r = st.session_state.results[fname]
-    try:
-        _analyze_one_file(fname, p, r, progress_bar, step_idx, total_files)
-    except Exception as exc:
-        r["error"] = str(exc)
-        r["filtered"] = np.zeros((100, 2))
-        r["events"] = {"count": 0, "cycles": [], "active_segments": [],
-                       "rest_segments": [], "envelope": np.zeros(100),
-                       "envelope_ch1": np.zeros(100), "envelope_ch2": np.zeros(100),
-                       "segment_data": (np.zeros((100,3)), 2000),
-                       "baseline": 0, "threshold": 0}
-        r["curves"] = {}
-        r["features_df"] = None
-        r["action_result"] = {"overall_action": f"错误: {exc}", "cycle_results": [],
-                               "vote_counts": {}}
-        r["quality_result"] = {"standard_count": 0, "nonstandard_count": 0,
-                                "overall_summary": f"错误: {exc}", "cycle_results": []}
-        progress_bar.progress((step_idx + 1) / total_files,
-                              text=f"❌ {fname} (失败)")
-
-
-def _analyze_one_file(fname, p, r, progress_bar, step_idx, total_files):
-    raw = r["raw"]
-    fs_val = r["fs"]
-
+# ================================================================
+# 分析管线
+# ================================================================
+def analyze(r, p):
+    """展平错误处理 — 每步独立 catch"""
     # Step 1: 预处理
-    filtered, _ = preprocess(raw, fs_val,
-        apply_dc_removal=True, apply_amplitude_scaling=True, apply_notch=True,
-        notch_freq=p["notch_freq"], fc_high=p["fc_high"], fc_low=p["fc_low"])
-    r["filtered"] = filtered
+    try:
+        r.filtered, _ = preprocess(r.raw, r.fs,
+            apply_dc_removal=True, apply_amplitude_scaling=True, apply_notch=True,
+            notch_freq=p["notch_freq"], fc_high=p["fc_high"], fc_low=p["fc_low"])
+    except Exception as e:
+        r.set_error(f"预处理失败: {e}")
+        return
 
     # Step 2: 事件检测
-    events = detect_events(filtered, fs_val,
-        smooth_window=p["smooth_win"], min_duration=p["min_dur"],
-        max_duration=p["max_dur"], target_k=p["target_k"],
-        activity_sigma=p["activity_sigma"])
-    r["events"] = events
+    try:
+        r.events = detect_events(r.filtered, r.fs,
+            smooth_window=p["smooth_win"], min_duration=p["min_dur"],
+            max_duration=p["max_dur"], target_k=p["target_k"],
+            activity_sigma=p["activity_sigma"])
+    except Exception as e:
+        r.set_error(f"事件检测失败: {e}")
+        return
 
-    # 无有效周期 → 跳过后续步骤
-    if events["count"] == 0:
-        r["curves"] = {}
-        r["features_df"] = None
-        r["action_result"] = {"overall_action": "无周期", "cycle_results": [],
-                               "vote_counts": {}}
-        r["quality_result"] = {"standard_count": 0, "nonstandard_count": 0,
-                                "overall_summary": "无周期", "cycle_results": []}
-        progress_bar.progress((step_idx + 1) / total_files,
-                              text=f"⚠️ {fname} (0 周期, 跳过)")
+    if r.cycle_count == 0:
         return
 
     # Step 3: 特征提取
     try:
-        curves = compute_feature_curves(filtered, fs_val)
-        r["curves"] = curves
-
-        labels_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                   "data", "labels.csv")
-        labels_df = load_labels(labels_path)
-        features_df = extract_all_cycles(filtered, fs_val, events["cycles"],
-                                         filename=fname, labels_df=labels_df)
-        r["features_df"] = features_df
-
-        # Step 4: 动作分类
-        action_result = predict_action(filtered, fs_val, events["cycles"])
-        r["action_result"] = action_result
-
-        # Step 5: 质量评估
-        quality_result = predict_quality(filtered, fs_val, events["cycles"],
-                                         action_label=action_result.get("overall_action", ""))
-        r["quality_result"] = quality_result
-
-        progress_bar.progress((step_idx + 1) / total_files,
-                              text=f"✅ {fname} ({events['count']} 周期, {action_result.get('overall_action','?')})")
+        r.curves = compute_feature_curves(r.filtered, r.fs)
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        lb = load_labels(os.path.join(root, "data", "labels.csv"))
+        r.features_df = extract_all_cycles(r.filtered, r.fs, r.events["cycles"],
+                                           filename=r.fname, labels_df=lb)
     except Exception as e:
-        r["curves"] = {}
-        r["features_df"] = None
-        r["action_result"] = {"overall_action": f"错误: {e}", "cycle_results": [],
-                               "vote_counts": {}}
-        r["quality_result"] = {"standard_count": 0, "nonstandard_count": 0,
-                                "overall_summary": f"错误: {e}", "cycle_results": []}
-        progress_bar.progress((step_idx + 1) / total_files,
-                              text=f"❌ {fname} (失败: {str(e)[:40]})")
+        r.set_error(f"特征提取失败: {e}")
+        return
 
-
-def run_analysis():
-    """遍历所有上传文件执行分析"""
-    files_to_analyze = [fn for fn, r in st.session_state.results.items()
-                        if r.get("filtered") is None]
-    p = st.session_state._params
-    total = len(files_to_analyze)
-
-    progress_bar = st.progress(0, text=f"分析中: 0/{total} 文件...")
-    status_container = st.empty()
-
+    # Step 4: 动作分类
     try:
-        for i, fname in enumerate(files_to_analyze):
-            progress_bar.progress(i / total, text=f"🔍 {fname} ({i+1}/{total})...")
-            analyze_one_file(fname, p, progress_bar, i, total)
+        act = predict_action(r.filtered, r.fs, r.events["cycles"])
+        r.action = act.get("overall_action", "?")
+        r.action_votes = act.get("vote_counts", {})
+        r.action_cycles = act.get("cycle_results", [])
+    except Exception as e:
+        r.action = f"错误"
 
-        progress_bar.progress(1.0, text="✅ 分析完成！")
-        st.session_state.analysis_done = True
-        st.session_state.current_file = files_to_analyze[0]
-
-        # 汇总
-        summary_parts = []
-        for fn in files_to_analyze:
-            r = st.session_state.results[fn]
-            if r.get("error"):
-                summary_parts.append(f"**{fn}**: ❌ {r['error'][:30]}")
-            else:
-                n = r["events"]["count"]
-                a = r["action_result"].get("overall_action", "?")
-                summary_parts.append(f"**{fn}**: {n}周期, {a}")
-        status_container.success("🎉 分析完成 | " + " | ".join(summary_parts))
-
-    except Exception as exc:
-        progress_bar.progress(1.0, text="❌ 分析失败")
-        status_container.error(f"分析出错: {exc}")
-        st.session_state.analysis_done = False
+    # Step 5: 质量评估
+    try:
+        qual = predict_quality(r.filtered, r.fs, r.events["cycles"],
+                               action_label=r.action)
+        r.std_count = qual.get("standard_count", 0)
+        r.nonstd_count = qual.get("nonstandard_count", 0)
+        r.quality_cycles = qual.get("cycle_results", [])
+    except Exception as e:
+        r.std_count, r.nonstd_count = 0, 0
 
 
-# ---- 触发分析 ----
-if (st.session_state.results and not st.session_state.analysis_done
-        and '_params' in st.session_state):
-    run_analysis()
+if (st.session_state.result is not None and not st.session_state.analysis_done
+        and "_params" in st.session_state):
+    r = st.session_state.result
+    with st.spinner("分析中..."):
+        analyze(r, st.session_state._params)
+    st.session_state.analysis_done = True
+    if r.is_ok:
+        st.success(f"🎉 分析完成 — {r.cycle_count} 周期, 动作: {r.action}")
+    elif r.error:
+        st.error(f"❌ {r.error}")
+    else:
+        st.warning(f"⚠️ 0 周期 — 尝试调低静息阈值倍数")
 
-# ------------------------------------------------------------
-# 获取当前文件数据
-# ------------------------------------------------------------
-def get_current_data():
-    """返回当前选中文件的分析数据"""
-    current = st.session_state.get("current_file")
-    if not current:
-        return None
-    r = st.session_state.results.get(current, {})
-    if r.get("filtered") is None:
-        return None
-    return {
-        "fname": current,
-        "raw": r["raw"],
-        "fs": r["fs"],
-        "filtered": r["filtered"],
-        "events": r["events"],
-        "curves": r["curves"],
-        "features_df": r["features_df"],
-        "action_result": r["action_result"],
-        "quality_result": r["quality_result"],
-    }
-
-# ------------------------------------------------------------
+# ================================================================
 # Tab 结构
-# ------------------------------------------------------------
-if not st.session_state.analysis_done:
-    if not st.session_state.results:
-        st.info("👈 请上传 .mat 文件并点击「开始分析」")
-    else:
-        st.info("👈 请点击「开始分析」按钮")
+# ================================================================
+r = st.session_state.result
+if r is None:
+    st.title("💪 双通道表面肌电信号处理与分析")
+    st.caption("CH1: 三角肌前束 | CH2: 三角肌中束 | 前平举·侧平举·推肩 | ⚠️ 质量判断为辅助参考")
+    st.info("👈 请上传 .mat 文件并点击「开始分析」")
+elif not st.session_state.analysis_done:
+    st.title(f"💪 {r.fname}")
+    st.info("👈 请点击「开始分析」按钮")
 else:
-    d = get_current_data()
-    if d is None:
-        st.info("👈 请在侧边栏选择一个已分析的文件")
-    elif d["events"]["count"] == 0:
-        err = st.session_state.results.get(st.session_state.current_file, {}).get("error", "未知错误")
-        st.error(f"❌ 文件分析失败: {err}")
-    else:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(
-            ["📊 原始信号", "🔧 预处理结果", "🎯 活动检测",
-             "📈 特征展示", "🧠 分类与质量"]
-        )
+    st.title(f"💪 {r.fname}")
+    fs_val = r.fs
 
-        raw = d["raw"]
-        fs_val = d["fs"]
-        filtered = d["filtered"]
-        events = d["events"]
-        curves = d["curves"]
-        features_df = d["features_df"]
-        action_result = d["action_result"]
-        quality_result = d["quality_result"]
+    tabs = st.tabs(["📊 原始信号", "🔧 预处理", "🎯 活动检测",
+                     "📈 特征展示", "🧠 分类与质量"])
 
-        # ====== Tab 1: 原始信号 ======
-        with tab1:
-            st.subheader(f"📊 原始 EMG 信号 — {d['fname']}")
-            st.markdown(f"采样率: {fs_val} Hz | 时长: {raw.shape[0]/fs_val:.1f}s")
+    # ---- Tab 1 ----
+    with tabs[0]:
+        st.subheader("📊 原始 EMG 信号")
+        st.markdown(f"采样率: {fs_val} Hz | 时长: {r.raw.shape[0]/fs_val:.1f}s")
+        st.pyplot(plot_data((r.raw, fs_val), "原始信号", channels=2))
+        st.pyplot(plot_fft_spectrum((r.raw, fs_val), freq_range=(0, 500), scale="dB"))
 
-            st.markdown("#### 双通道时域波形")
-            fig = plot_data((raw, fs_val), "原始信号", channels=2)
-            st.pyplot(fig)
-
-            st.markdown("#### 幅度谱 (0–500 Hz, dB)")
-            fig = plot_fft_spectrum((raw, fs_val), freq_range=(0, 500), scale="dB")
-            st.pyplot(fig)
-
-        # ====== Tab 2: 预处理结果 ======
-        with tab2:
-            st.subheader("🔧 预处理结果")
-            st.caption("选择要查看的对比视图：")
-
-            view_opts = st.multiselect(
-                "对比视图",
-                options=["ch1_time", "ch1_freq", "ch2_time", "ch2_freq"],
-                default=["ch1_time", "ch2_time"],
-                format_func=lambda x: {
-                    "ch1_time": "CH1 时域对比", "ch1_freq": "CH1 频谱对比",
-                    "ch2_time": "CH2 时域对比", "ch2_freq": "CH2 频谱对比",
-                }[x],
-                label_visibility="collapsed",
-            )
-
-            for view in view_opts:
-                if view == "ch1_time":
-                    st.markdown("#### CH1 时域对比")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        fig = plot_data((raw[:, 0:1], fs_val), "CH1 原始", channels=1)
-                        st.pyplot(fig)
-                    with c2:
-                        fig = plot_data((filtered[:, 0:1], fs_val), "CH1 处理后", channels=1)
-                        st.pyplot(fig)
-                elif view == "ch1_freq":
-                    st.markdown("#### CH1 频谱对比")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        fig = plot_fft_spectrum((raw[:, 0:1], fs_val), channels=1,
-                                                title="CH1 原始频谱", freq_range=(0, 500), scale="dB")
-                        st.pyplot(fig)
-                    with c2:
-                        fig = plot_fft_spectrum((filtered[:, 0:1], fs_val), channels=1,
-                                                title="CH1 处理后频谱", freq_range=(0, 500), scale="dB")
-                        st.pyplot(fig)
-                elif view == "ch2_time":
-                    st.markdown("#### CH2 时域对比")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        fig = plot_data((raw[:, 1:2], fs_val), "CH2 原始", channels=1)
-                        st.pyplot(fig)
-                    with c2:
-                        fig = plot_data((filtered[:, 1:2], fs_val), "CH2 处理后", channels=1)
-                        st.pyplot(fig)
-                elif view == "ch2_freq":
-                    st.markdown("#### CH2 频谱对比")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        fig = plot_fft_spectrum((raw[:, 1:2], fs_val), channels=1,
-                                                title="CH2 原始频谱", freq_range=(0, 500), scale="dB")
-                        st.pyplot(fig)
-                    with c2:
-                        fig = plot_fft_spectrum((filtered[:, 1:2], fs_val), channels=1,
-                                                title="CH2 处理后频谱", freq_range=(0, 500), scale="dB")
-                        st.pyplot(fig)
+    # ---- Tab 2 ----
+    with tabs[1]:
+        st.subheader("🔧 预处理结果")
+        if r.filtered is None:
+            st.warning("预处理未完成")
+        else:
+            views = st.multiselect("对比视图",
+                options=["ch1_time","ch1_freq","ch2_time","ch2_freq"],
+                default=["ch1_time","ch2_time"],
+                format_func=lambda x: {"ch1_time":"CH1 时域","ch1_freq":"CH1 频谱",
+                    "ch2_time":"CH2 时域","ch2_freq":"CH2 频谱"}[x],
+                label_visibility="collapsed")
+            for v in views:
+                if v == "ch1_time":
+                    c1,c2=st.columns(2)
+                    c1.pyplot(plot_data((r.raw[:,0:1],fs_val),"CH1 原始",channels=1))
+                    c2.pyplot(plot_data((r.filtered[:,0:1],fs_val),"CH1 处理后",channels=1))
+                elif v == "ch1_freq":
+                    c1,c2=st.columns(2)
+                    c1.pyplot(plot_fft_spectrum((r.raw[:,0:1],fs_val),channels=1,
+                              title="CH1 原始频谱",freq_range=(0,500),scale="dB"))
+                    c2.pyplot(plot_fft_spectrum((r.filtered[:,0:1],fs_val),channels=1,
+                              title="CH1 处理后频谱",freq_range=(0,500),scale="dB"))
+                elif v == "ch2_time":
+                    c1,c2=st.columns(2)
+                    c1.pyplot(plot_data((r.raw[:,1:2],fs_val),"CH2 原始",channels=1))
+                    c2.pyplot(plot_data((r.filtered[:,1:2],fs_val),"CH2 处理后",channels=1))
+                elif v == "ch2_freq":
+                    c1,c2=st.columns(2)
+                    c1.pyplot(plot_fft_spectrum((r.raw[:,1:2],fs_val),channels=1,
+                              title="CH2 原始频谱",freq_range=(0,500),scale="dB"))
+                    c2.pyplot(plot_fft_spectrum((r.filtered[:,1:2],fs_val),channels=1,
+                              title="CH2 处理后频谱",freq_range=(0,500),scale="dB"))
                 st.markdown("---")
 
-        # ====== Tab 3: 活动检测 ======
-        with tab3:
-            st.subheader("🎯 动作事件检测")
-            count = events["count"]
-
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("检测周期数", count)
-            if events["cycles"]:
-                durs = [(e - s) / fs_val for s, e, _ in events["cycles"]]
-                c2.metric("平均周期时长", f"{np.mean(durs):.2f} s")
-                c3.metric("时长范围", f"{min(durs):.2f} – {max(durs):.2f} s")
-            c4.metric("活动段数", len(events.get("active_segments", [])))
-
-            bl = events.get("baseline", 0)
-            th = events.get("threshold", 0)
-            st.caption(f"静息基线: {bl:.4f} | 活动阈值: {th:.4f} | "
-                       f"标记: 🟢周期段(2) 🔵活动段(1) ⚪静息段(0)")
-
+    # ---- Tab 3 ----
+    with tabs[2]:
+        st.subheader("🎯 动作事件检测")
+        if r.events is None:
+            st.warning("事件检测未完成")
+        else:
+            c1,c2,c3,c4=st.columns(4)
+            c1.metric("周期数", r.cycle_count)
+            if r.events["cycles"]:
+                durs=[(e-s)/fs_val for s,e,_ in r.events["cycles"]]
+                c2.metric("均长", f"{np.mean(durs):.2f}s")
+                c3.metric("范围", f"{min(durs):.2f}–{max(durs):.2f}s")
+            c4.metric("活动段", len(r.active_segments))
+            st.caption(f"基线: {r.baseline:.4f} | 阈值: {r.threshold:.4f}")
             st.markdown("---")
-            col_left, col_right = st.columns([1, 2])
-
-            with col_left:
-                st.markdown("#### 周期起止时间")
-                if events["cycles"]:
-                    table_data = []
-                    for i, (s, e, pk) in enumerate(events["cycles"], start=1):
-                        table_data.append({
-                            "#": i, "起始(s)": round(s / fs_val, 2),
-                            "结束(s)": round(e / fs_val, 2),
-                            "时长(s)": round((e - s) / fs_val, 2),
-                            "波峰(s)": round(pk / fs_val, 2),
-                        })
-                    st.dataframe(table_data, use_container_width=True, hide_index=True,
-                                 height=min(38 + 35 * len(table_data), 320))
+            cl,cr=st.columns([1,2])
+            with cl:
+                st.markdown("#### 周期表")
+                if r.events["cycles"]:
+                    td=[{"#":i+1,"始(s)":round(s/fs_val,2),"止(s)":round(e/fs_val,2),
+                         "长(s)":round((e-s)/fs_val,2),"峰(s)":round(pk/fs_val,2)}
+                        for i,(s,e,pk) in enumerate(r.events["cycles"])]
+                    st.dataframe(td, use_container_width=True, hide_index=True,
+                                 height=min(38+35*len(td),320))
                 else:
-                    st.warning("未检测到有效周期")
+                    st.warning("无周期")
+                with st.expander("📋 活动/静息段", expanded=False):
+                    if r.active_segments:
+                        st.caption("**活动段**")
+                        st.dataframe([{"#":i+1,"始":round(s/fs_val,2),"止":round(e/fs_val,2),
+                                      "长":round((e-s)/fs_val,2)}
+                                      for i,(s,e) in enumerate(r.active_segments)],
+                                     use_container_width=True, hide_index=True)
+                    if r.rest_segments:
+                        st.caption("**静息段**")
+                        st.dataframe([{"#":i+1,"始":round(s/fs_val,2),"止":round(e/fs_val,2),
+                                      "长":round((e-s)/fs_val,2)}
+                                      for i,(s,e) in enumerate(r.rest_segments)],
+                                     use_container_width=True, hide_index=True)
+            with cr:
+                st.markdown("#### 包络与周期边界")
+                if r.envelope is not None:
+                    st.pyplot(plot_envelope_with_cycles(r.envelope, fs_val,
+                        r.events["cycles"], r.env_ch1, r.env_ch2, r.threshold))
+            with st.expander("📌 活动标记", expanded=False):
+                if r.segment_data is not None:
+                    st.pyplot(plot_data(r.segment_data, "活动标记", channels=3))
 
-                with st.expander("📋 活动段 & 静息段详情", expanded=False):
-                    if events.get("active_segments"):
-                        st.markdown("**活动段:**")
-                        adata = [{"#": i+1, "起始(s)": round(s/fs_val,2),
-                                  "结束(s)": round(e/fs_val,2),
-                                  "时长(s)": round((e-s)/fs_val,2)}
-                                 for i, (s, e) in enumerate(events["active_segments"])]
-                        st.dataframe(adata, use_container_width=True, hide_index=True)
-                    if events.get("rest_segments"):
-                        st.markdown("**静息段:**")
-                        rdata = [{"#": i+1, "起始(s)": round(s/fs_val,2),
-                                  "结束(s)": round(e/fs_val,2),
-                                  "时长(s)": round((e-s)/fs_val,2)}
-                                 for i, (s, e) in enumerate(events["rest_segments"])]
-                        st.dataframe(rdata, use_container_width=True, hide_index=True)
-
-            with col_right:
-                st.markdown("#### RMS 融合包络与周期边界")
-                fig = plot_envelope_with_cycles(
-                    events["envelope"], fs_val, events["cycles"],
-                    envelope_ch1=events.get("envelope_ch1"),
-                    envelope_ch2=events.get("envelope_ch2"),
-                    threshold=th,
-                )
-                st.pyplot(fig)
-
-            with st.expander("📌 三级活动标记详情", expanded=False):
-                st.caption("🟢 周期段(2) | 🔵 活动段(1) | ⚪ 静息段(0)")
-                fig = plot_data(events["segment_data"], "活动标记", channels=3)
-                st.pyplot(fig)
-
-        # ====== Tab 4: 特征展示 ======
-        with tab4:
-            st.subheader("📈 特征提取与展示")
-
-            with st.expander("📌 预处理后双通道时域图", expanded=False):
-                fig = plot_data((filtered, fs_val), "预处理后信号", channels=2)
-                st.pyplot(fig)
-
-            st.markdown("---")
+    # ---- Tab 4 ----
+    with tabs[3]:
+        st.subheader("📈 特征展示")
+        if r.filtered is not None:
+            with st.expander("📌 预处理时域图", expanded=False):
+                st.pyplot(plot_data((r.filtered, fs_val), "预处理后", channels=2))
+        if r.curves is not None:
             st.markdown("#### 特征曲线")
-            curve_opts = st.multiselect(
-                "选择特征曲线",
-                options=["rms", "mf", "mdf", "ratio"],
-                default=["rms", "ratio"],
-                format_func=lambda x: {
-                    "rms": "RMS 包络曲线", "mf": "中位频率 (MF) 曲线",
-                    "mdf": "平均功率频率 (MDF) 曲线", "ratio": "CH2/CH1 RMS 比值曲线",
-                }[x],
-                label_visibility="collapsed", key="tab4_curves",
-            )
-            if curve_opts:
-                fig = viz_feature_curves(curves, fs_val, cycles=events["cycles"],
-                                         selected_features=curve_opts)
-                st.pyplot(fig)
-
+            co=st.multiselect("选择曲线", ["rms","mf","mdf","ratio"],
+                default=["rms","ratio"],
+                format_func=lambda x: {"rms":"RMS","mf":"MF","mdf":"MDF","ratio":"CH2/CH1比值"}[x],
+                label_visibility="collapsed", key="t4c")
+            if co:
+                st.pyplot(viz_fc(r.curves, fs_val,
+                    cycles=r.events["cycles"] if r.events else None, selected_features=co))
+        if r.features_df is not None:
             st.markdown("---")
-            st.markdown("#### 周期级特征表")
-            all_fc = [c for c in features_df.columns
-                      if c not in ("cycle_id","start_idx","end_idx","start_time",
-                                   "end_time","duration","action_label","quality_label",
-                                   "abnormal_type","label_source")]
-            selected_cols = st.multiselect(
-                "选择特征列", options=all_fc,
-                default=[c for c in DEFAULT_SELECTED_FEATURES if c in all_fc],
-                label_visibility="collapsed", key="tab4_table",
-            )
-            meta_cols = ["cycle_id","start_time","end_time","duration",
-                         "action_label","quality_label","abnormal_type"]
-            display_cols = [c for c in meta_cols if c in features_df.columns]
-            display_cols += [c for c in selected_cols if c in features_df.columns]
-            if features_df is not None and not features_df.empty:
-                st.dataframe(features_df[display_cols], use_container_width=True,
-                             hide_index=True, height=min(38+35*len(features_df),400))
-                st.caption(f"共 {len(features_df)} 个周期")
+            st.markdown("#### 周期特征表")
+            fc_all=[c for c in r.features_df.columns
+                    if c not in ("cycle_id","start_idx","end_idx","start_time","end_time",
+                                 "duration","action_label","quality_label","abnormal_type","label_source")]
+            sel=st.multiselect("选择列", fc_all,
+                default=[c for c in DEFAULT_SELECTED_FEATURES if c in fc_all],
+                label_visibility="collapsed", key="t4t")
+            mc=["cycle_id","start_time","end_time","duration","action_label","quality_label","abnormal_type"]
+            dc=[c for c in mc if c in r.features_df.columns]
+            dc+=[c for c in sel if c in r.features_df.columns]
+            st.dataframe(r.features_df[dc], use_container_width=True, hide_index=True,
+                         height=min(38+35*len(r.features_df),400))
+            st.caption(f"共 {len(r.features_df)} 周期")
 
-        # ====== Tab 5: 分类与质量 ======
-        with tab5:
-            st.subheader("🧠 动作分类与质量评估")
-            st.caption("⚠️ 质量判断为辅助参考，不作为严格医学或运动学评价结果")
+    # ---- Tab 5 ----
+    with tabs[4]:
+        st.subheader("🧠 分类与质量")
+        st.caption("⚠️ 质量判断为辅助参考")
 
-            st.markdown("### 📊 动作类型识别")
-            oa = action_result.get("overall_action", "N/A")
-            votes = action_result.get("vote_counts", {})
+        st.markdown("### 📊 动作类型")
+        c1,c2=st.columns(2)
+        c1.metric("整体动作", r.action or "?")
+        c2.metric("投票", " | ".join(f"{k}:{v}" for k,v in r.action_votes.items()) if r.action_votes else "N/A")
+        if r.action_cycles:
+            st.markdown("**周期级:**")
+            st.dataframe([{"周期":x["cycle_id"],"始(s)":x["start_time"],"长(s)":x["duration"],
+                           "预测":x["prediction"],"置信":f"{x.get('confidence',1):.1%}",
+                           "一致":"✓" if x.get("consistent",True) else "⚠"}
+                          for x in r.action_cycles], use_container_width=True, hide_index=True)
+            bad=[x for x in r.action_cycles if not x.get("consistent",True)]
+            if bad: st.warning(f"⚠️ {len(bad)} 周期不一致")
 
-            c1, c2 = st.columns(2)
-            c1.metric("整体疑似动作", oa)
-            c2.metric("投票分布", " | ".join(f"{k}: {v}票" for k, v in votes.items()))
-
-            if action_result.get("cycle_results"):
-                st.markdown("**周期级分类结果：**")
-                data = [{"周期": r["cycle_id"], "起始(s)": r["start_time"],
-                         "时长(s)": r["duration"], "预测": r["prediction"],
-                         "置信度": f"{r.get('confidence',1):.1%}",
-                         "一致": "✓" if r.get("consistent", True) else "⚠"}
-                        for r in action_result["cycle_results"]]
-                st.dataframe(data, use_container_width=True, hide_index=True)
-                inconsistent = [r for r in action_result["cycle_results"]
-                                if not r.get("consistent", True)]
-                if inconsistent:
-                    st.warning(f"⚠️ {len(inconsistent)} 个周期与整体不一致")
-
-            st.markdown("---")
-            st.markdown("### ⚙️ 动作质量辅助判断")
-            c1, c2 = st.columns(2)
-            c1.metric("✅ 标准周期", quality_result.get("standard_count", 0))
-            c2.metric("⚠️ 不标准周期", quality_result.get("nonstandard_count", 0))
-
-            if quality_result.get("cycle_results"):
-                st.markdown("**周期级质量详情：**")
-                qdata = [{"周期": r["cycle_id"], "时长(s)": r["duration"],
-                          "CH2/CH1": r["ratio"], "质量": r["quality"],
-                          "异常类型": r.get("abnormal_type") or "-"}
-                         for r in quality_result["cycle_results"]]
-                st.dataframe(qdata, use_container_width=True, hide_index=True)
-                abnormal = [r for r in quality_result["cycle_results"]
-                            if r.get("explanation")]
-                if abnormal:
-                    with st.expander("🔍 不标准周期详细解释", expanded=True):
-                        for r in abnormal:
-                            st.markdown(f"**周期 {r['cycle_id']}** "
-                                        f"({r['start_time']}s–{r['end_time']}s, "
-                                        f"CH2/CH1={r['ratio']})：")
-                            st.info(r["explanation"])
+        st.markdown("---")
+        st.markdown("### ⚙️ 质量判断")
+        c1,c2=st.columns(2)
+        c1.metric("✅ 标准", r.std_count)
+        c2.metric("⚠️ 不标准", r.nonstd_count)
+        if r.quality_cycles:
+            st.dataframe([{"周期":x["cycle_id"],"长(s)":x["duration"],"CH2/CH1":x["ratio"],
+                           "质量":x["quality"],"异常":x.get("abnormal_type") or "-"}
+                          for x in r.quality_cycles], use_container_width=True, hide_index=True)
+            ab=[x for x in r.quality_cycles if x.get("explanation")]
+            if ab:
+                with st.expander("🔍 异常解释", expanded=True):
+                    for x in ab:
+                        st.info(f"周期{x['cycle_id']}: {x['explanation']}")

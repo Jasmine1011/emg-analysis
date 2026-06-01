@@ -55,9 +55,9 @@ except ImportError:
 
 warnings.filterwarnings("ignore")
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from emg.utils import data_loader
+from src.utils import data_loader
 from src.preprocessing import preprocess
 from src.event_detection import detect_events
 from src.features import extract_cycle_features
@@ -65,11 +65,11 @@ from src.features import extract_cycle_features
 # ------------------------------------------------------------
 # 全局配置
 # ------------------------------------------------------------
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(SCRIPT_DIR, "dataset", "data")
-LABELS_FILE = os.path.join(SCRIPT_DIR, "emg", "labels_v2.csv")
-MODEL_DIR = os.path.join(SCRIPT_DIR, "emg", "models")
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "emg", "outputs")
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(ROOT_DIR, "data")
+LABELS_FILE = os.path.join(ROOT_DIR, "data", "labels_v2.csv")
+MODEL_DIR = os.path.join(ROOT_DIR, "models")
+OUTPUT_DIR = os.path.join(ROOT_DIR, "outputs")
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 

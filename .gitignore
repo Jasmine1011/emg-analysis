@@ -32,5 +32,14 @@ memory/
 # Backup (optional — include if you want history)
 # backup/
 
-# Large outputs (optional — include for demo)
-# outputs/
+# Hidden test data (do not publish)
+Group03/
+_test*.py
+_tune*.py
+_final*.py
+_sw*.py
+_ds*.py
+_v11*.py
+_feat*.py
+_loso*.py
+_try*.py

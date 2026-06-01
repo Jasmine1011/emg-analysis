@@ -1,9 +1,9 @@
 ﻿model,best_params,cv_mean_f1,test_accuracy,test_f1_macro,test_precision,test_recall
-MLP,"{'clf__alpha': 0.0001, 'clf__hidden_layer_sizes': (50,), 'clf__learning_rate_init': 0.001, 'scaler': StandardScaler()}",0.8858,0.7,0.6876,0.6944,0.7082
-KNN,"{'clf__metric': 'manhattan', 'clf__n_neighbors': 3, 'clf__weights': 'distance', 'scaler': MinMaxScaler()}",0.9069,0.6833,0.6811,0.7167,0.6987
-RandomForest,"{'clf__max_depth': None, 'clf__min_samples_split': 2, 'clf__n_estimators': 100, 'scaler': StandardScaler()}",0.878,0.65,0.6571,0.6818,0.6659
-GradientBoosting,"{'clf__learning_rate': 0.1, 'clf__max_depth': 3, 'clf__n_estimators': 100, 'scaler': StandardScaler()}",0.8463,0.6167,0.6248,0.6347,0.6364
-RidgeClassifier,"{'clf__alpha': 0.1, 'scaler': MinMaxScaler()}",0.8267,0.6333,0.606,0.5937,0.6493
-SVC,"{'clf__C': 10, 'clf__degree': 2, 'clf__gamma': 'scale', 'clf__kernel': 'rbf', 'scaler': MinMaxScaler()}",0.891,0.6167,0.5926,0.6119,0.6249
-BaggingTree,"{'clf__max_features': 0.5, 'clf__max_samples': 0.5, 'clf__n_estimators': 100, 'scaler': StandardScaler()}",0.8713,0.55,0.546,0.5458,0.5736
-LogisticRegression,"{'clf__C': 1, 'scaler': MinMaxScaler()}",0.8054,0.5833,0.5383,0.5241,0.6031
+KNN,"{'clf__metric': 'manhattan', 'clf__n_neighbors': 7, 'clf__weights': 'uniform', 'scaler': MinMaxScaler()}",0.8545,0.7119,0.7289,0.7468,0.7333
+MLP,"{'clf__alpha': 0.001, 'clf__hidden_layer_sizes': (50,), 'clf__learning_rate_init': 0.001, 'scaler': MinMaxScaler()}",0.817,0.6441,0.6478,0.6545,0.67
+RidgeClassifier,"{'clf__alpha': 0.01, 'scaler': MinMaxScaler()}",0.8211,0.6271,0.6365,0.6375,0.6567
+GradientBoosting,"{'clf__learning_rate': 0.1, 'clf__max_depth': 3, 'clf__n_estimators': 100, 'scaler': StandardScaler()}",0.8496,0.6271,0.6363,0.6444,0.6567
+RandomForest,"{'clf__max_depth': None, 'clf__min_samples_split': 5, 'clf__n_estimators': 100, 'scaler': StandardScaler()}",0.8436,0.6102,0.6141,0.6209,0.64
+SVC,"{'clf__C': 1, 'clf__degree': 2, 'clf__gamma': 'scale', 'clf__kernel': 'rbf', 'scaler': MinMaxScaler()}",0.8371,0.6102,0.5754,0.575,0.63
+BaggingTree,"{'clf__max_features': 0.5, 'clf__max_samples': 1.0, 'clf__n_estimators': 200, 'scaler': StandardScaler()}",0.8306,0.5424,0.5471,0.5346,0.58
+LogisticRegression,"{'clf__C': 0.01, 'scaler': StandardScaler()}",0.7831,0.5424,0.4853,0.4463,0.5767

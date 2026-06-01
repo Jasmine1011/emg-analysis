@@ -69,10 +69,10 @@ from src.features import extract_cycle_features
 # ------------------------------------------------------------
 # 全局配置
 # ------------------------------------------------------------
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(SCRIPT_DIR, "data")
-MODEL_DIR = os.path.join(SCRIPT_DIR, "models")
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "outputs")
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(ROOT_DIR, "data")
+MODEL_DIR = os.path.join(ROOT_DIR, "models")
+OUTPUT_DIR = os.path.join(ROOT_DIR, "outputs")
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
