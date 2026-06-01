@@ -143,25 +143,45 @@ def analyze_one_file(fname, p, progress_bar, step_idx, total_files):
         activity_sigma=p["activity_sigma"])
     r["events"] = events
 
+    # 无有效周期 → 跳过后续步骤
+    if events["count"] == 0:
+        r["curves"] = {}
+        r["features_df"] = None
+        r["action_result"] = {"overall_action": "无周期", "cycle_results": [],
+                               "vote_counts": {}}
+        r["quality_result"] = {"standard_count": 0, "nonstandard_count": 0,
+                                "overall_summary": "无周期", "cycle_results": []}
+        progress_bar.progress((step_idx + 1) / total_files,
+                              text=f"⚠️ {fname} (0 周期, 跳过)")
+        return
+
     # Step 3: 特征提取
-    curves = compute_feature_curves(filtered, fs_val)
-    r["curves"] = curves
+    try:
+        curves = compute_feature_curves(filtered, fs_val)
+        r["curves"] = curves
 
-    labels_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                               "data", "labels.csv")
-    labels_df = load_labels(labels_path)
-    features_df = extract_all_cycles(filtered, fs_val, events["cycles"],
-                                     filename=fname, labels_df=labels_df)
-    r["features_df"] = features_df
+        labels_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                   "data", "labels.csv")
+        labels_df = load_labels(labels_path)
+        features_df = extract_all_cycles(filtered, fs_val, events["cycles"],
+                                         filename=fname, labels_df=labels_df)
+        r["features_df"] = features_df
 
-    # Step 4: 动作分类
-    action_result = predict_action(filtered, fs_val, events["cycles"])
-    r["action_result"] = action_result
+        # Step 4: 动作分类
+        action_result = predict_action(filtered, fs_val, events["cycles"])
+        r["action_result"] = action_result
 
-    # Step 5: 质量评估
-    quality_result = predict_quality(filtered, fs_val, events["cycles"],
-                                     action_label=action_result.get("overall_action", ""))
-    r["quality_result"] = quality_result
+        # Step 5: 质量评估
+        quality_result = predict_quality(filtered, fs_val, events["cycles"],
+                                         action_label=action_result.get("overall_action", ""))
+        r["quality_result"] = quality_result
+    except Exception as e:
+        r["curves"] = {}
+        r["features_df"] = None
+        r["action_result"] = {"overall_action": f"错误: {e}", "cycle_results": [],
+                               "vote_counts": {}}
+        r["quality_result"] = {"standard_count": 0, "nonstandard_count": 0,
+                                "overall_summary": f"错误: {e}", "cycle_results": []}
 
     progress_bar.progress((step_idx + 1) / total_files,
                           text=f"✅ {fname} ({events['count']} 周期, {action_result.get('overall_action','?')})")
@@ -436,7 +456,7 @@ else:
                          "action_label","quality_label","abnormal_type"]
             display_cols = [c for c in meta_cols if c in features_df.columns]
             display_cols += [c for c in selected_cols if c in features_df.columns]
-            if not features_df.empty:
+            if features_df is not None and not features_df.empty:
                 st.dataframe(features_df[display_cols], use_container_width=True,
                              hide_index=True, height=min(38+35*len(features_df),400))
                 st.caption(f"共 {len(features_df)} 个周期")
