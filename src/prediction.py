@@ -93,12 +93,18 @@ def _extract_features_for_prediction(filtered_data, fs, cycles):
 
         rows.append(feat)
 
-    # 构建特征矩阵 (对齐训练时的特征列顺序)
+    # 构建特征矩阵 (对齐训练时的特征列顺序 — Base + Dominance, 47维)
     import pandas as pd
     df = pd.DataFrame(rows)
-    exclude = ["cycle_id", "start_idx", "end_idx", "start_time", "end_time",
-               "filename", "action_label", "quality_label"]
-    feature_cols = [c for c in df.columns if c not in exclude]
+    meta_cols = {"cycle_id", "start_idx", "end_idx", "start_time", "end_time",
+                 "filename", "action_label", "quality_label",
+                 "duration", "abnormal_type", "label_source"}
+    # 排除时序/形态特征 (v1.1训练时未使用)
+    temporal_cols = {"ch1_rise_ms", "ch2_rise_ms", "ch1_fall_ms", "ch2_fall_ms",
+                     "rise_ratio", "fall_ratio", "onset_lag_ms",
+                     "ch1_n_peaks", "ch2_n_peaks", "ch1_crest", "ch2_crest",
+                     "ch1_env_skew", "ch2_env_skew"}
+    feature_cols = [c for c in df.columns if c not in meta_cols and c not in temporal_cols]
     X = df[feature_cols].values
 
     return X, ratios
