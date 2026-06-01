@@ -214,8 +214,10 @@ def run_analysis():
         st.session_state.analysis_done = False
 
 
-# ---- 触发分析 ----
-if uploaded_file is not None and not st.session_state.analysis_done:
+# ---- 触发分析 (仅当用户点击了「开始分析」后) ----
+if (uploaded_file is not None
+        and not st.session_state.analysis_done
+        and '_params' in st.session_state):
     run_analysis()
 
 # ------------------------------------------------------------
