@@ -1,3 +1,4 @@
+# EMG Analysis Platform - Python dependencies
 streamlit
 numpy
 scipy
