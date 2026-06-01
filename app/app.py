@@ -168,6 +168,8 @@ def _analyze_one_file(fname, p, r, progress_bar, step_idx, total_files):
 
     # Step 1: 预处理
     filtered, _ = preprocess(raw, fs_val,
+        apply_dc_removal=True, apply_amplitude_scaling=True, apply_notch=True,
+        notch_freq=p["notch_freq"], fc_high=p["fc_high"], fc_low=p["fc_low"])
     r["filtered"] = filtered
 
     # Step 2: 事件检测
