@@ -46,7 +46,11 @@ with st.sidebar:
             os.unlink(tmp_path)
             st.session_state.result = FileResult(fname=uploaded.name, raw=raw, fs=fs)
             st.session_state.analysis_done = False
-            st.session_state._params = {}  # 触发自动分析
+            # 用默认参数自动开始分析
+            st.session_state._params = dict(
+                notch_freq=50, fc_high=20, fc_low=450,
+                smooth_win=0.3, min_dur=1.5, max_dur=8.0,
+                target_k=5, activity_sigma=3.0)
 
         r = st.session_state.result
         st.success(f"**{r.fname}**")
