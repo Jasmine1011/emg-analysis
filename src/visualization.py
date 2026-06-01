@@ -12,16 +12,22 @@ src/visualization.py — 特征曲线和包络可视化辅助函数
     - 图表中文字体适配
 """
 
+import os
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import ScalarFormatter, MaxNLocator
 
 
-# 中文字体配置
-plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei',
-                                   'WenQuanYi Micro Hei', 'Arial Unicode MS']
-plt.rcParams['axes.unicode_minus'] = False
-plt.rcParams['mathtext.default'] = 'regular'
+# ---- 注册项目自带中文字体（兼容 Streamlit Cloud Linux） ----
+_FONT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "fonts", "SimHei.ttf")
+if os.path.exists(_FONT_PATH):
+    matplotlib.font_manager.fontManager.addfont(_FONT_PATH)
+matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei',
+                                           'WenQuanYi Micro Hei', 'DejaVu Sans']
+matplotlib.rcParams['axes.unicode_minus'] = False
+matplotlib.rcParams['mathtext.default'] = 'regular'
 
 
 def plot_envelope_with_cycles(envelope, fs, cycles,
