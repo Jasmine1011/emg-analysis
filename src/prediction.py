@@ -36,6 +36,14 @@ def _model_path(name):
     return os.path.join(_get_emg_dir(), "models", name)
 
 
+def _load_feature_names():
+    """加载训练时使用的特征名列表，预测时对齐特征维度"""
+    fp = _model_path("feature_names.joblib")
+    if os.path.exists(fp):
+        return load(fp)
+    return None
+
+
 # ------------------------------------------------------------
 # 模型加载
 # ------------------------------------------------------------
@@ -93,18 +101,20 @@ def _extract_features_for_prediction(filtered_data, fs, cycles):
 
         rows.append(feat)
 
-    # 构建特征矩阵 (对齐训练时的特征列顺序 — Base + Dominance, 47维)
+    # 构建特征矩阵 (对齐训练时的特征列)
     import pandas as pd
     df = pd.DataFrame(rows)
     meta_cols = {"cycle_id", "start_idx", "end_idx", "start_time", "end_time",
                  "filename", "action_label", "quality_label",
                  "duration", "abnormal_type", "label_source"}
-    # 排除时序/形态特征 (v1.1训练时未使用)
-    temporal_cols = {"ch1_rise_ms", "ch2_rise_ms", "ch1_fall_ms", "ch2_fall_ms",
-                     "rise_ratio", "fall_ratio", "onset_lag_ms",
-                     "ch1_n_peaks", "ch2_n_peaks", "ch1_crest", "ch2_crest",
-                     "ch1_env_skew", "ch2_env_skew"}
-    feature_cols = [c for c in df.columns if c not in meta_cols and c not in temporal_cols]
+    # 从模型文件加载训练时使用的特征名
+    feature_cols = _load_feature_names()
+    if feature_cols is None:
+        # 回退：使用全部可用特征
+        feature_cols = [c for c in df.columns if c not in meta_cols]
+    else:
+        # 只保留模型训练时使用的特征
+        feature_cols = [c for c in feature_cols if c in df.columns]
     X = df[feature_cols].values
 
     return X, ratios
