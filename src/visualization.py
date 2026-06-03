@@ -103,6 +103,7 @@ def plot_envelope_with_cycles(envelope, fs, cycles,
     ax.set_xlabel('时间 (秒)')
     ax.set_ylabel('归一化幅度')
     ax.set_title(title)
+    ax.set_ylim(bottom=0)
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.legend(loc='upper right', fontsize=8, ncol=2)
     _apply_y_axis_format(ax)
@@ -169,6 +170,7 @@ def plot_feature_curves(feature_curves, fs, cycles=None,
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.legend(loc='upper right', fontsize=8)
         _apply_y_axis_format(ax)
+        ax.set_ylim(bottom=0)
 
         if cycles:
             _add_cycle_boundaries(ax, time_axis, cycles, fs)
@@ -187,6 +189,7 @@ def plot_feature_curves(feature_curves, fs, cycles=None,
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.legend(loc='upper right', fontsize=8)
         _apply_y_axis_format(ax)
+        ax.set_ylim(bottom=0)
 
         if cycles:
             _add_cycle_boundaries(ax, time_axis, cycles, fs)
@@ -205,6 +208,7 @@ def plot_feature_curves(feature_curves, fs, cycles=None,
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.legend(loc='upper right', fontsize=8)
         _apply_y_axis_format(ax)
+        ax.set_ylim(bottom=0)
 
         if cycles:
             _add_cycle_boundaries(ax, time_axis, cycles, fs)
@@ -222,6 +226,7 @@ def plot_feature_curves(feature_curves, fs, cycles=None,
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.legend(loc='upper right', fontsize=8)
         _apply_y_axis_format(ax)
+        ax.set_ylim(bottom=0)
 
         if cycles:
             _add_cycle_boundaries(ax, time_axis, cycles, fs)
