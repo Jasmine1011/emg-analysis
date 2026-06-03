@@ -101,6 +101,7 @@ def plot_envelope_with_cycles(envelope, fs, cycles,
         ax.axvline(t[e], color=color, linestyle='--', linewidth=0.8, alpha=0.7)
 
     ax.set_xlabel('时间 (秒)')
+    ax.set_xlim(left=0)
     ax.set_ylabel('归一化幅度')
     ax.set_title(title)
     ax.set_ylim(bottom=0)

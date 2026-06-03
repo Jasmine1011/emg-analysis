@@ -94,6 +94,7 @@ def plot_single_channel(data, fs, title="", ax= None, color = 1):
     else:
         ax.plot(time, signal, linewidth=0.6, color='tab:red')
     ax.set_xlabel('时间 (秒)')
+    ax.set_xlim(left=0)
     ax.set_ylabel('幅值')
     ax.set_title(title)
     ax.grid(True, alpha=0.3, linestyle='--')
