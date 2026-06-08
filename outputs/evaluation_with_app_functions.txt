@@ -1,0 +1,17 @@
+======================================================================
+  Model Evaluation Using App Functions
+======================================================================
+
+Total Samples: 295
+Accuracy: 0.0000
+F1 (macro): 0.0000
+
+Classification Report:
+              precision    recall  f1-score   support
+
+         不标准       0.00      0.00      0.00     121.0
+          标准       0.00      0.00      0.00     174.0
+
+    accuracy                           0.00     295.0
+   macro avg       0.00      0.00      0.00     295.0
+weighted avg       0.00      0.00      0.00     295.0

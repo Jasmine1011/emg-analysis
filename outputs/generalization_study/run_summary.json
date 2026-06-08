@@ -1,0 +1,9 @@
+{
+  "elapsed_seconds": 679.204610824585,
+  "best_key": "data_plus_2_auto__stable15_plus_timing__SoftVote_LR_SVM_RF__mean_proba",
+  "best_f1_macro": 0.795095785440613,
+  "best_precision_macro": 0.856711915535445,
+  "best_recall_macro": 0.8055555555555555,
+  "best_accuracy": 0.8055555555555556,
+  "outputs": "F:\\Project_final\\outputs\\generalization_study"
+}

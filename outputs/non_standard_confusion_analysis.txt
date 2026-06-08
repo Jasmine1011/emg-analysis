@@ -1,0 +1,23 @@
+======================================================================
+  Non-Standard Signal Confusion Matrix Analysis
+======================================================================
+
+Total Non-Standard Signals: 121
+Correctly Identified: 0
+Detection Rate: 0.00%
+
+Overall Confusion Matrix:
+                Predicted
+                Non-Std  Std
+  True Non-Std       0    121
+      Std            0      0
+
+By Abnormal Type:
+abnormal_type  count  correct  missed  detection_rate
+        其他不标准     69        0      69             0.0
+       疑似中束代偿     25        0      25             0.0
+       疑似前束代偿     27        0      27             0.0
+
+Interpretation:
+- Detection Rate: Percentage of non-standard signals correctly identified
+- Missed: Number of non-standard signals incorrectly classified as standard

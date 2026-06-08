@@ -36,11 +36,16 @@ def _model_path(name):
     return os.path.join(_get_emg_dir(), "models", name)
 
 
-def _load_feature_names():
+def _load_feature_names(task):
     """加载训练时使用的特征名列表，预测时对齐特征维度"""
-    fp = _model_path("feature_names.joblib")
-    if os.path.exists(fp):
-        return load(fp)
+    task_specific = _model_path(f"{task}_feature_names.joblib")
+    if os.path.exists(task_specific):
+        return load(task_specific)
+
+    # 兼容旧模型：历史版本动作/质量模型共用 feature_names.joblib。
+    legacy = _model_path("feature_names.joblib")
+    if os.path.exists(legacy):
+        return load(legacy)
     return None
 
 
@@ -71,10 +76,26 @@ def load_quality_model():
     return load(mp), load(lp)
 
 
+def _decode_quality_predictions(model, le, y_pred):
+    """
+    Decode quality labels.
+
+    Historical quality_model.joblib was saved with numeric convention
+    0=标准, 1=不标准, while label_encoder_quality.joblib has classes
+    ['不标准', '标准'].  The app only needs inverse decoding, so keep this
+    compatibility shim here instead of changing the binary model artifact.
+    """
+    classes = list(getattr(le, "classes_", []))
+    step_names = set(getattr(model, "named_steps", {}).keys())
+    if classes == ["不标准", "标准"] and step_names == {"s", "c"}:
+        return np.array(["标准" if int(v) == 0 else "不标准" for v in y_pred])
+    return le.inverse_transform(y_pred)
+
+
 # ------------------------------------------------------------
 # 特征提取辅助
 # ------------------------------------------------------------
-def _extract_features_for_prediction(filtered_data, fs, cycles):
+def _extract_features_for_prediction(filtered_data, fs, cycles, task):
     """
     对所有周期提取特征，返回特征矩阵 X 和每个周期的 RMS 比值.
 
@@ -108,7 +129,7 @@ def _extract_features_for_prediction(filtered_data, fs, cycles):
                  "filename", "action_label", "quality_label",
                  "duration", "abnormal_type", "label_source"}
     # 从模型文件加载训练时使用的特征名
-    feature_cols = _load_feature_names()
+    feature_cols = _load_feature_names(task)
     if feature_cols is None:
         # 回退：使用全部可用特征
         feature_cols = [c for c in df.columns if c not in meta_cols]
@@ -146,7 +167,7 @@ def predict_action(filtered_data, fs, cycles):
     if model is None:
         return {"overall_action": "模型未训练", "cycle_results": []}
 
-    X, ratios = _extract_features_for_prediction(filtered_data, fs, cycles)
+    X, ratios = _extract_features_for_prediction(filtered_data, fs, cycles, "action")
     if len(X) == 0:
         return {"overall_action": "无周期", "cycle_results": []}
 
@@ -224,13 +245,13 @@ def predict_quality(filtered_data, fs, cycles, action_label=None):
     result : dict
     """
     model, le = load_quality_model()
-    X, ratios = _extract_features_for_prediction(filtered_data, fs, cycles)
+    X, ratios = _extract_features_for_prediction(filtered_data, fs, cycles, "quality")
 
     if model is None or len(X) == 0:
         return {"overall_summary": "模型未训练", "cycle_results": []}
 
     y_pred = model.predict(X)
-    pred_labels = le.inverse_transform(y_pred)
+    pred_labels = _decode_quality_predictions(model, le, y_pred)
 
     cycle_results = []
     standard_count = 0

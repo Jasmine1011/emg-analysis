@@ -1,0 +1,6 @@
+﻿dataset,files,cycles,subjects,class_distribution,cycle_count_mean
+data_auto,65,295,15,"{1: 116, 2: 93, 3: 86}",4.538461538461538
+data_plus_2_auto,74,339,18,"{1: 130, 2: 108, 3: 101}",4.581081081081081
+standard_manual_data,40,174,13,"{1: 70, 2: 42, 3: 62}",4.35
+standard_manual_plus_2_auto,49,218,16,"{1: 84, 2: 57, 3: 77}",4.448979591836735
+Group03,36,201,1,"{1: 55, 2: 70, 3: 76}",5.583333333333333
